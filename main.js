@@ -849,15 +849,6 @@ function appendMessage(role, content, confirmData = null) {
         secEl.appendChild(purposeRow);
       }
 
-      // Risk level badge (HIGH-03)
-      const riskMap = { LOW: 'risk-low', MEDIUM: 'risk-medium', HIGH: 'risk-high' };
-      const riskClass = riskMap[d.risk_level] || 'risk-medium';
-      const riskRow = document.createElement('div');
-      riskRow.className = 'draft-row';
-      riskRow.innerHTML = '<span class="draft-label">Уровень риска:</span>'
-        + '<span class="draft-value"><span class="risk-badge ' + riskClass + '">'
-        + (d.risk_level || '—') + '</span></span>';
-      secEl.appendChild(riskRow);
 
       // Security warnings (MEDIUM-01)
       const reasons = d.risk_reasons || [];
@@ -954,6 +945,7 @@ function _buildRecipientDetailsPanel(draftId, draftDetails, riskLevel, bubble) {
   const { wrap: w1, inp: accountInp }  = makeField('Номер расчётного счёта (IBAN BY или иной)', uid + '_acc', 'BY20OLMP3135000000093600000...');
   const { wrap: w2, inp: bankInp }     = makeField('Банк получателя', uid + '_bank', 'ОАО «Приорбанк»');
   const { wrap: w3, inp: currInp }     = makeField('Валюта счёта', uid + '_cur', '', 'select');
+  const { wrap: w4, inp: purposeInp }  = makeField('Назначение платежа', uid + '_pur', 'test');
 
   ['BYN', 'USD', 'EUR', 'RUB'].forEach(c => {
     const opt = document.createElement('option');
@@ -965,6 +957,7 @@ function _buildRecipientDetailsPanel(draftId, draftDetails, riskLevel, bubble) {
   panel.appendChild(w1);
   panel.appendChild(w2);
   panel.appendChild(w3);
+  panel.appendChild(w4);
 
   const errEl = document.createElement('div');
   errEl.style.cssText = 'color:#dc2626;font-size:12px;margin-top:4px;min-height:16px;';
@@ -991,9 +984,11 @@ function _buildRecipientDetailsPanel(draftId, draftDetails, riskLevel, bubble) {
     const account  = accountInp.value.trim();
     const bankName = bankInp.value.trim();
     const currency = currInp.value;
+    const purpose  = purposeInp.value.trim();
 
     if (!account) { errEl.textContent = 'Укажите номер счёта.'; return; }
     if (!bankName) { errEl.textContent = 'Укажите название банка.'; return; }
+    if (!purpose)  { errEl.textContent = 'Укажите назначение платежа.'; return; }
 
     submitBtn.disabled = true;
     cancelBtn.disabled = true;
@@ -1009,11 +1004,15 @@ function _buildRecipientDetailsPanel(draftId, draftDetails, riskLevel, bubble) {
           account_number: account,
           bank_name: bankName,
           currency: currency,
+          purpose: purpose,
         }),
       });
       const rdata = await resp.json();
       if (!resp.ok) {
-        errEl.textContent = rdata.detail || 'Ошибка при проверке реквизитов.';
+        const det = rdata.detail;
+        errEl.textContent = Array.isArray(det)
+          ? det.map(e => e.msg || e.message || JSON.stringify(e)).join('; ')
+          : (det || 'Ошибка при проверке реквизитов.');
         submitBtn.disabled = false;
         cancelBtn.disabled = false;
         submitBtn.textContent = 'Проверить и продолжить';
@@ -1057,8 +1056,6 @@ async function handleConfirm(token, confirmed, panel) {
       }
     }
     appendMessage('ai', resultText);
-    // Refresh notification badge after confirmed action
-    setTimeout(_pollNotifications, 800);
   } catch {
     panel.remove();
     appendMessage('ai', 'Ошибка при обработке подтверждения.');

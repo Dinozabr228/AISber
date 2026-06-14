@@ -1815,19 +1815,6 @@ async def confirm(request: ConfirmRequest) -> ConfirmResponse:
     _metrics["requests_confirmed"] += 1
 
     # Add notification after successful transfer
-    if action == "initiate_transfer":
-        amount = parameters.get("amount", 0)
-        recipient = parameters.get("recipient", "")
-        try:
-            amount_str = f"{float(amount):,.2f}"
-        except (TypeError, ValueError):
-            amount_str = str(amount)
-        _add_notification(
-            user_id,
-            f"Перевод на сумму {amount_str} BYN получателю {recipient} принят к исполнению.",
-            level="success",
-        )
-
     return ConfirmResponse(result=action_result, message="Операция выполнена успешно.")
 
 
