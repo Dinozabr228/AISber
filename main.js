@@ -942,7 +942,7 @@ function _buildRecipientDetailsPanel(draftId, draftDetails, riskLevel, bubble) {
   }
 
   const uid = '_rd_' + Math.random().toString(36).slice(2, 8);
-  const { wrap: w1, inp: accountInp }  = makeField('Номер расчётного счёта (IBAN BY или иной)', uid + '_acc', 'BY20OLMP3135000000093600000...');
+  const { wrap: w1, inp: accountInp }  = makeField('Номер расчётного счёта (IBAN BY или иной)', uid + '_acc', 'BY13PJCB30130001234567890000');
   const { wrap: w2, inp: bankInp }     = makeField('Банк получателя', uid + '_bank', 'ОАО «Приорбанк»');
   const { wrap: w3, inp: currInp }     = makeField('Валюта счёта', uid + '_cur', '', 'select');
   const { wrap: w4, inp: purposeInp }  = makeField('Назначение платежа', uid + '_pur', 'test');
@@ -952,6 +952,40 @@ function _buildRecipientDetailsPanel(draftId, draftDetails, riskLevel, bubble) {
     opt.value = c;
     opt.textContent = c;
     currInp.appendChild(opt);
+  });
+
+  // Real-time BY IBAN hint shown under the account field
+  const ibanHint = document.createElement('div');
+  ibanHint.style.cssText = 'font-size:11px;margin-top:3px;min-height:15px;color:#6b7280;';
+  w1.appendChild(ibanHint);
+
+  accountInp.addEventListener('input', () => {
+    const norm = accountInp.value.trim().toUpperCase().replace(/\s/g, '');
+    if (!norm) { ibanHint.textContent = ''; accountInp.style.borderColor = ''; return; }
+    if (norm.startsWith('BY')) {
+      const len = norm.length;
+      const valid = /^BY\d{2}[A-Z0-9]{24}$/.test(norm);
+      if (valid) {
+        ibanHint.style.color = '#16a34a';
+        ibanHint.textContent = '✓ Формат BY IBAN корректен';
+        accountInp.style.borderColor = '#16a34a';
+      } else {
+        ibanHint.style.color = len < 28 ? '#d97706' : '#dc2626';
+        ibanHint.textContent = `BY IBAN: ${len}/28 символов — BY + 2 цифры + 24 буквы/цифры`;
+        accountInp.style.borderColor = len < 28 ? '#d97706' : '#dc2626';
+      }
+    } else {
+      const validOther = /^[A-Za-z0-9 \-\.]{5,100}$/.test(accountInp.value.trim());
+      if (validOther) {
+        ibanHint.style.color = '#16a34a';
+        ibanHint.textContent = '✓ Формат счёта принят';
+        accountInp.style.borderColor = '#16a34a';
+      } else {
+        ibanHint.style.color = '#dc2626';
+        ibanHint.textContent = 'Разрешены: буквы, цифры, дефис, точка (мин. 5 символов)';
+        accountInp.style.borderColor = '#dc2626';
+      }
+    }
   });
 
   panel.appendChild(w1);
@@ -987,6 +1021,13 @@ function _buildRecipientDetailsPanel(draftId, draftDetails, riskLevel, bubble) {
     const purpose  = purposeInp.value.trim();
 
     if (!account) { errEl.textContent = 'Укажите номер счёта.'; return; }
+    const accountNorm = account.toUpperCase().replace(/\s/g, '');
+    if (accountNorm.startsWith('BY')) {
+      if (!/^BY\d{2}[A-Z0-9]{24}$/.test(accountNorm)) {
+        errEl.textContent = 'Неверный формат BY IBAN. Требуется 28 символов: BY + 2 цифры + 24 буквы/цифры. Пример: BY13PJCB30130001234567890000';
+        return;
+      }
+    }
     if (!bankName) { errEl.textContent = 'Укажите название банка.'; return; }
     if (!purpose)  { errEl.textContent = 'Укажите назначение платежа.'; return; }
 

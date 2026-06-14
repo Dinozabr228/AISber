@@ -26,7 +26,6 @@ def calculate_risk(
         score += 20
         reasons.append("Перевод новому контрагенту на значительную сумму требует дополнительной проверки")
 
-    # HIGH-01: missing bank details for unknown recipient
     has_account = bool(parameters.get("account_number"))
     has_bank    = bool(parameters.get("bank_name"))
     if is_unknown_recipient and not (has_account and has_bank):

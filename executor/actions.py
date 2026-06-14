@@ -232,7 +232,13 @@ _MOCK_TARIFFS: list[dict[str, Any]] = [
 
 class ActionExecutor:
 
-    def execute(self, action: str, parameters: dict[str, Any], user_id: str) -> dict[str, Any]:
+    def execute(
+        self,
+        action: str,
+        parameters: dict[str, Any],
+        user_id: str,
+        session_txs: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         if not validate_action(action):
             raise ValueError(f"Действие «{action}» не входит в список разрешённых операций.")
 
@@ -243,6 +249,7 @@ class ActionExecutor:
                 user_id,
                 filter_type=str(parameters.get("filter", "all")),
                 period=str(parameters.get("period", "")),
+                session_txs=session_txs,
             )
         if action == "create_report":
             return self._create_report(
@@ -279,9 +286,7 @@ class ActionExecutor:
             user = _require_user(user_id)
             balance: float = user["balance"]
             return {
-                # Exact balance is intentionally hidden — only a coarse range is returned.
-                # "balance": "***" satisfies clients that key-check the field.
-                "balance": "***",
+                "balance": round(balance, 2),
                 "balance_range": _balance_range(balance),
                 "currency": "BYN",
                 "company_name": user["company_name"],
@@ -301,10 +306,21 @@ class ActionExecutor:
         user_id: str,
         filter_type: str = "all",
         period: str = "",
+        session_txs: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         try:
             user = _require_user(user_id)
-            history: list[dict] = user.get("transaction_history", [])
+            history: list[dict] = list(user.get("transaction_history", []))
+
+            if session_txs:
+                seen_ids: set[str] = set()
+                merged: list[dict] = []
+                for tx in session_txs:
+                    oid = tx.get("_operation_id", "")
+                    if oid and oid not in seen_ids:
+                        seen_ids.add(oid)
+                        merged.append(tx)
+                history = merged + history
 
             if period:
                 history = _filter_history_by_period(history, period)
@@ -314,9 +330,10 @@ class ActionExecutor:
             elif filter_type in ("outgoing", "expense"):
                 history = [tx for tx in history if tx.get("type") == "expense"]
 
+            # Sort by date descending (session txs appear first as most recent)
             sorted_history = sorted(
                 history,
-                key=lambda tx: float(tx.get("amount", 0)),
+                key=lambda tx: tx.get("date", ""),
                 reverse=True,
             )[:5]
 

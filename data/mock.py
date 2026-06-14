@@ -4,7 +4,7 @@ MOCK_USERS: Dict[str, Any] = {
     "user_001": {
         "user_id": "user_001",
         "company_name": "ООО «ТехноСтрой БЕЛ»",
-        "balance": 100000.00,
+        "balance": 2000000.00,
         "known_recipients": [
             "ООО «СтройМатериалы Плюс»",
             "ИП Ковалёв А.С.",
@@ -45,7 +45,7 @@ MOCK_USERS: Dict[str, Any] = {
     "user_002": {
         "user_id": "user_002",
         "company_name": "ИП Романова Екатерина Сергеевна",
-        "balance": 8940.75,
+        "balance": 2000000.00,
         "known_recipients": [
             "ООО «Дизайн Студия Арт»",
             "ИП Петров Д.В.",
@@ -84,7 +84,7 @@ MOCK_USERS: Dict[str, Any] = {
     "user_003": {
         "user_id": "user_003",
         "company_name": "ООО «Агрокомплекс Нива»",
-        "balance": 213450.00,
+        "balance": 2000000.00,
         "known_recipients": [
             "ООО «АгроХимия Плюс»",
             "РУП «Белагросервис»",
@@ -134,7 +134,7 @@ def get_all_user_ids() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Counterparty registry — HIGH-02 / MEDIUM-02
+# Counterparty registry
 # Provides bank, masked account, and currency for known legal entities.
 # ---------------------------------------------------------------------------
 

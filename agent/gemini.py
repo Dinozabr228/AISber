@@ -419,27 +419,27 @@ _FALLBACK_KEYWORDS: list[tuple[list[str], str]] = [
     (["выписк", "transaction", "транзакц", "операци", "платеж", "история",
       "куда ушли", "на что потратил", "расход", "что поступило", "поступлени",
       "входящи", "исходящи", "последние платеж",
-      # HIGH-03: colloquial, jargon, mixed lang
+
       "движени", "оборот", "обороты", "покажи поступлени",
       "самый большой перевод", "самый большой платёж", "самый большой платеж",
       "сколько потратил", "сколько заплатил", "account statement",
       "transaction history", "show transactions"], "transaction"),
     (["баланс", "остаток", "сколько", "balance", "сколько осталось",
       "сколько у меня", "деньги на счёт", "деньги на счет",
-      # HIGH-03: colloquial and typos
+
       "покажи деньги", "деньги на счету", "деньги есть",
       "что со счёт", "что со счет", "show balance", "my balance",
       "check balance", "get balance", "балнас", "остатое"], "balance"),
     (["переведи", "перевед", "перевести", "отправить", "отправь", "transfer", "перевод",
-      # HIGH-03: jargon and mixed lang
+
       "скинь", "скину", "скинуть", "плати", "заплати", "оплати", "перекинь",
       "слить деньги", "send money", "make transfer", "transfer money"], "transfer"),
     (["отчёт", "отчет", "report", "выгрузк"], "report"),
     (["тариф", "tariff", "стоимость", "цена", "план",
-      # HIGH-03: colloquial tariff queries
+
       "помоги с тарифами", "расскажи про тарифы", "show tariffs", "my tariffs"], "tariff"),
     (["реквизит", "requisite", "бик", "инн", "кпп",
-      # HIGH-03: colloquial and mixed lang
+
       "наши реквизиты", "реквизиты фирмы", "реквизиты компании",
       "банковские реквизиты", "bank details", "account details",
       "рекивизиты", "рекизиты"], "requisite"),
@@ -447,7 +447,7 @@ _FALLBACK_KEYWORDS: list[tuple[list[str], str]] = [
     (["где", "раздел", "найти", "открыть", "перейти", "навигац", "меню", "куда", "настройк"], "navigate"),
     (["объясни", "расскажи", "что такое", "как работает", "помоги разобраться",
       "помоги понять", "не понимаю", "непонятно", "объясните",
-      # HIGH-03: extended assistant triggers
+
       "поясни", "расшифруй", "что означает", "что значит", "почему", "зачем",
       "в чём разница", "чем отличается", "расскажи подробнее",
       "помоги разобраться с", "explain", "what is", "how does"], "assistant"),
@@ -499,7 +499,7 @@ _SECTION_ID_TO_NAME: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
-# HIGH-03: Multi-layer normalization pipeline
+# Multi-layer normalization pipeline
 # Order: mixed language → typo correction → colloquial expansion
 # ---------------------------------------------------------------------------
 
@@ -769,7 +769,6 @@ def _match_faq(message: str) -> str | None:
 
 
 def _fallback_response(message: str) -> GeminiResponse:
-    # HIGH-03: full normalization pipeline (mixed lang → typos → colloquial)
     msg_lower = _normalize_message(message.lower().strip())
 
     # Direct section name navigation

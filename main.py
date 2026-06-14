@@ -33,6 +33,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 
 from agent.gemini import call_gemini
+from state.conversation_context import context_store
+from state.session_transactions import SessionTransaction, session_tx_store
 from data.mock import get_counterparty, get_user
 from executor.actions import ActionExecutor
 from models import (
@@ -72,6 +74,7 @@ def _store_confirmation(
     parameters: dict,
     risk_level: str = "UNKNOWN",
     draft_id: str | None = None,
+    conversation_id: str = "",
 ) -> None:
     _pending_confirmations[token] = {
         "user_id": user_id,
@@ -79,6 +82,7 @@ def _store_confirmation(
         "parameters": parameters,
         "risk_level": risk_level,
         "draft_id": draft_id,
+        "conversation_id": conversation_id,
         "expires_at": time.monotonic() + _CONFIRMATION_TTL,
     }
 
@@ -134,6 +138,7 @@ def _create_draft(
     risk_level: str,
     status: str = "pending",
     ttl: float | None = None,
+    conversation_id: str = "",
 ) -> str:
     """Create a draft record. status may be 'pending' or 'requires_recipient_details'."""
     draft_id = str(uuid.uuid4())
@@ -156,6 +161,7 @@ def _create_draft(
         "expires_at": expires_iso,
         "expires_mono": now_mono + effective_ttl,
         "risk_level": risk_level,
+        "conversation_id": conversation_id,
     }
     return draft_id
 
@@ -188,7 +194,7 @@ def _find_pending_recipient_details_draft(
 # this set is either a logic bug or an attempted manipulation — both are logged.
 # ---------------------------------------------------------------------------
 _VALID_DRAFT_TRANSITIONS: frozenset[tuple[str, str]] = frozenset({
-    # New counterparty flow (HIGH-01 / CRITICAL-01)
+    # New counterparty flow
     ("requires_recipient_details", "pending"),     # details provided + server-validated
     ("requires_recipient_details", "expired"),     # TTL expired before details submitted
     ("requires_recipient_details", "cancelled"),   # cancelled before details (future use)
@@ -274,22 +280,32 @@ _MAX_CONTEXT_DEPTH = 10
 _conversation_contexts: dict[str, dict[str, Any]] = {}
 
 
-def _get_or_create_context(conversation_id: str, user_id: str) -> dict[str, Any]:
+def _get_or_create_context(
+    conversation_id: str,
+    user_id: str,
+    session_id: str = "",
+) -> dict[str, Any]:
+    ctx_obj = context_store.get_or_create(conversation_id, user_id, session_id)
+
     entry = _conversation_contexts.get(conversation_id)
     if entry is None:
         now_iso = datetime.now(timezone.utc).isoformat()
         entry = {
             "conversation_id": conversation_id,
+            "session_id": session_id,
             "user_id": user_id,
             "history": [],
             "last_action": None,
+            "last_intent": "",
+            "last_filters": {},
+            "last_result": None,
             "last_parameters": {},
             "last_active": time.monotonic(),
-            # History fields
             "title": None,
             "title_locked": False,
             "created_at": now_iso,
             "updated_at": now_iso,
+            "expires_at": ctx_obj.expires_at,
             "messages": [],
         }
         _conversation_contexts[conversation_id] = entry
@@ -299,6 +315,9 @@ def _get_or_create_context(conversation_id: str, user_id: str) -> dict[str, Any]
     if time.monotonic() - entry["last_active"] > _CONTEXT_TTL:
         entry["history"] = []
         entry["last_action"] = None
+        entry["last_intent"] = ""
+        entry["last_filters"] = {}
+        entry["last_result"] = None
         entry["last_parameters"] = {}
     entry["last_active"] = time.monotonic()
     return entry
@@ -382,6 +401,7 @@ def _update_context(
     parameters: dict,
     intent: str = "",
     assistant_topic: str = "",
+    result: dict[str, Any] | None = None,
 ) -> None:
     entry = _conversation_contexts.get(conversation_id)
     if entry is None:
@@ -389,6 +409,42 @@ def _update_context(
     entry["last_action"] = action
     entry["last_parameters"] = parameters
     entry["last_active"] = time.monotonic()
+
+    if intent:
+        entry["last_intent"] = intent
+    if action == "get_transactions":
+        new_filters: dict[str, Any] = {}
+        if parameters.get("filter"):
+            new_filters["filter"] = parameters["filter"]
+        if parameters.get("period"):
+            new_filters["period"] = parameters["period"]
+        if new_filters:
+            merged = dict(entry.get("last_filters") or {})
+            merged.update(new_filters)
+            entry["last_filters"] = merged
+    elif action in ("create_report",):
+        new_filters = {}
+        if parameters.get("report_subtype"):
+            new_filters["report_subtype"] = parameters["report_subtype"]
+        if parameters.get("period"):
+            new_filters["period"] = parameters["period"]
+        if new_filters:
+            entry["last_filters"] = new_filters
+    elif action not in ("get_transactions", "create_report"):
+        # Different action type — preserve filters only for same-action follow-ups
+        pass
+    if result is not None:
+        entry["last_result"] = result
+
+    # Sync extended fields to ConversationContextStore
+    safe_filters = _safe_context_params(action, parameters) if action else {}
+    context_store.update(
+        conversation_id,
+        intent=intent,
+        filters=safe_filters if safe_filters else None,
+        result=result,
+    )
+
     if action:
         turn: dict[str, str] = {"action": action}
         if intent:
@@ -396,34 +452,79 @@ def _update_context(
         turn.update(_safe_context_params(action, parameters))
         entry["history"].append(turn)
     elif assistant_topic:
-        # Store trimmed assistant response as conversational topic for follow-up resolution.
-        # Strip bracket chars to prevent prompt injection when re-injected into Gemini prompt.
         clean = _TOPIC_STRIP_RE.sub('', assistant_topic).strip()[:100]
         if clean:
             entry["history"].append({"topic": clean})
     entry["history"] = entry["history"][-_MAX_CONTEXT_DEPTH:]
 
 
+# Filter fields that carry over across follow-up turns per action type
+_FOLLOW_UP_FIELDS: dict[str, list[str]] = {
+    "get_transactions": ["filter", "period"],
+    "create_report":    ["report_type", "period", "report_subtype"],
+}
+
+# Parameter values that mean "not specified" — don't override stored context
+_EMPTY_VALUES: frozenset[str] = frozenset({"", "all", "none", "any"})
+
+
+def _apply_follow_up_context(
+    conversation_id: str,
+    action: str | None,
+    parameters: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge stored context filters into parameters for follow-up requests.
+
+    Stored filters fill gaps only — Gemini's explicit non-empty values win.
+    Applied only when the action matches last_intent (same action type follow-up).
+    """
+    if action not in _FOLLOW_UP_FIELDS:
+        return parameters
+
+    ctx_obj = context_store.get(conversation_id)
+    if not ctx_obj or not ctx_obj.last_filters:
+        return parameters
+
+    # Only merge when it's a continuation of the same action
+    if ctx_obj.last_intent and ctx_obj.last_intent != action:
+        return parameters
+
+    relevant_fields = _FOLLOW_UP_FIELDS[action]
+    merged = dict(parameters)
+    for field_name in relevant_fields:
+        stored_val = ctx_obj.last_filters.get(field_name)
+        current_val = parameters.get(field_name, "")
+        if stored_val and str(current_val).lower() in _EMPTY_VALUES:
+            merged[field_name] = stored_val
+    return merged
+
+
 def _build_context_hint(ctx: dict[str, Any]) -> str:
     """Build a multi-turn context hint from conversation history.
 
-    Banking turns:  "get_transactions(filter=incoming) → ..."
+    Banking turns:  "get_transactions(filter=incoming, period=last_month) → ..."
     Assistant turns: "[Кредит — это форма финансовых отношений...] → ..."
     Passed as a prefix to the Gemini prompt so it can resolve follow-up questions.
     Gemini remains stateless — context is re-injected every request.
     """
     history = ctx.get("history", [])
-    if not history:
-        return ""
     recent = history[-3:]
     turn_strs: list[str] = []
     for turn in recent:
         if "action" in turn:
             action = turn["action"]
-            extras = [f"{k}={turn[k]}" for k in ("filter", "period", "section", "report_type") if k in turn]
+            extras = [f"{k}={turn[k]}" for k in ("filter", "period", "section", "report_type", "report_subtype") if k in turn]
             turn_strs.append(f"{action}({', '.join(extras)})" if extras else action)
         elif "topic" in turn:
             turn_strs.append(f"[{turn['topic']}]")
+
+    # append active filters so Gemini can resolve follow-up questions
+    ctx_obj = context_store.get(ctx.get("conversation_id", ""))
+    if ctx_obj:
+        filter_hint = ctx_obj.build_filter_hint()
+        if filter_hint and turn_strs:
+            turn_strs[-1] = f"{turn_strs[-1]} [active: {filter_hint}]"
+
     if not turn_strs:
         return ""
     return " → ".join(turn_strs)
@@ -1061,6 +1162,8 @@ def _cleanup_expired_contexts() -> None:
     ]
     for cid in expired:
         _conversation_contexts.pop(cid, None)
+    context_store.cleanup_expired()
+    session_tx_store.cleanup_expired()
 
 
 def _cleanup_expired_sessions() -> None:
@@ -1171,7 +1274,7 @@ def _build_transfer_draft(
         "recipient_status": recipient_status,
         "risk_level": risk.get("level", "UNKNOWN"),
         "risk_reasons": risk.get("reasons", []),
-        # HIGH-01: include draft_id so frontend can call /recipient-details
+        # include draft_id so frontend can call /recipient-details
         "requires_details": not (is_known or has_registry or (provided_account and provided_bank)),
     }
     if draft_id:
@@ -1345,7 +1448,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
     context_hint = ""
     _is_first_turn = False
     try:
-        ctx = _get_or_create_context(conversation_id, user_id)
+        ctx = _get_or_create_context(conversation_id, user_id, session_id=conversation_id)
         context_hint = _build_context_hint(ctx)
         _is_first_turn = not bool(ctx.get("messages"))
         _store_message(conversation_id, "user", raw_message)
@@ -1377,6 +1480,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
     parameters: dict[str, Any] = gemini_resp.parameters
     confidence: str = gemini_resp.confidence
 
+    parameters = _apply_follow_up_context(conversation_id, action, parameters)
+
     if _is_first_turn:
         _set_conversation_title(
             conversation_id,
@@ -1397,7 +1502,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
     #   • Response always carries mode="assistant" (backend-authoritative).
     # ------------------------------------------------------------------
     if req_mode == "assistant":
-        _update_context(conversation_id, None, {}, assistant_topic=gemini_resp.user_message)
+        _update_context(conversation_id, None, {}, assistant_topic=gemini_resp.user_message, result=None)
         _write_audit(
             user_id=user_id,
             action="none",
@@ -1425,7 +1530,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     # Banking mode informational response (action=None returned by Gemini)
     if action is None:
-        _update_context(conversation_id, None, {})
+        _update_context(conversation_id, None, {}, intent=gemini_resp.intent)
         _write_audit(
             user_id=user_id,
             action="none",
@@ -1494,7 +1599,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
     )
 
     # ------------------------------------------------------------------
-    # HIGH-01: STEP 7b — Block transfers to unknown counterparties
+    # STEP 7b — Block transfers to unknown counterparties
     # Must run BEFORE the execution gate. No confirmation token is issued;
     # instead we return requires_recipient_details=True.
     # Overrides _requires_confirmation — token is issued only after /transfer/recipient-details.
@@ -1518,6 +1623,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 pending_did = _create_draft(
                     user_id, action, parameters, risk_level,
                     status="requires_recipient_details",
+                    conversation_id=conversation_id,
                 )
                 _is_dup_rd = False
 
@@ -1535,7 +1641,11 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 conversation_id=conversation_id,
                 mode=req_mode,
             )
-            _update_context(conversation_id, action, parameters, intent=gemini_resp.intent)
+            _update_context(
+                conversation_id, action, parameters,
+                intent=gemini_resp.intent,
+                result=None,
+            )
             _store_message(conversation_id, "ai", user_msg)
             _record_response_time((time.monotonic() - t_start) * 1000)
             return ChatResponse(
@@ -1576,6 +1686,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             _store_confirmation(
                 confirmation_token, user_id, action, parameters,
                 risk_level=risk_level, draft_id=draft_id,
+                conversation_id=conversation_id,
             )
 
         risk_action = _determine_risk_action(risk_level, action)
@@ -1598,7 +1709,11 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 "Нажмите «Подтвердить» для выполнения или «Отменить» для отмены."
             )
 
-        _update_context(conversation_id, action, parameters, intent=gemini_resp.intent)
+        _update_context(
+            conversation_id, action, parameters,
+            intent=gemini_resp.intent,
+            result=None,
+        )
         _store_message(conversation_id, "ai", user_msg)
         _record_response_time((time.monotonic() - t_start) * 1000)
         return ChatResponse(
@@ -1615,8 +1730,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
         )
 
     # Non-transfer action at LOW/MEDIUM risk — execute now.
+    _stxs = session_tx_store.get_for_user(user_id) if action == "get_transactions" else None
     try:
-        action_result = _executor.execute(action, parameters, user_id)
+        action_result = _executor.execute(action, parameters, user_id, session_txs=_stxs)
     except ValueError as exc:
         _write_audit(
             user_id=user_id, action=action, parameters=parameters,
@@ -1633,7 +1749,11 @@ async def chat(request: ChatRequest) -> ChatResponse:
         write_security_event("EXECUTOR_ERROR", str(exc)[:200], "MEDIUM")
         raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера.")
 
-    _update_context(conversation_id, action, parameters, intent=gemini_resp.intent)
+    _update_context(
+        conversation_id, action, parameters,
+        intent=gemini_resp.intent,
+        result=action_result if isinstance(action_result, dict) else None,
+    )
     _store_message(conversation_id, "ai", gemini_resp.user_message)
     _record_response_time((time.monotonic() - t_start) * 1000)
 
@@ -1707,6 +1827,7 @@ async def delete_conversation(
     if entry is None or entry.get("user_id") != uid:
         raise HTTPException(status_code=404, detail="Разговор не найден.")
     _conversation_contexts.pop(conv_id, None)
+    context_store.delete(conv_id)
     return JSONResponse({"deleted": conv_id})
 
 
@@ -1814,12 +1935,26 @@ async def confirm(request: ConfirmRequest) -> ConfirmResponse:
     _update_draft_status(draft_id, "confirmed")
     _metrics["requests_confirmed"] += 1
 
-    # Add notification after successful transfer
+    # store confirmed transfer in session for immediate visibility in history
+    if action == "initiate_transfer" and isinstance(action_result, dict):
+        _conv_id = pending.get("conversation_id", "")
+        session_tx_store.add(SessionTransaction(
+            operation_id=action_result.get("transfer_id", str(uuid.uuid4())),
+            user_id=user_id,
+            conversation_id=_conv_id,
+            recipient_name=str(parameters.get("recipient", "")),
+            amount=float(parameters.get("amount", 0)),
+            currency="BYN",
+            transaction_type="expense",
+            execution_status="accepted",
+            created_at=action_result.get("created_at", datetime.now(timezone.utc).isoformat()),
+        ))
+
     return ConfirmResponse(result=action_result, message="Операция выполнена успешно.")
 
 
 # ---------------------------------------------------------------------------
-# POST /api/v1/transfer/recipient-details  (HIGH-01)
+# POST /api/v1/transfer/recipient-details
 # Accepts bank details for a draft in "requires_recipient_details" status.
 # Validates, updates draft, creates confirmation token.
 # ---------------------------------------------------------------------------
@@ -1914,6 +2049,7 @@ async def add_recipient_details(request: RecipientDetailsRequest) -> RecipientDe
         _store_confirmation(
             confirmation_token, user_id, draft["action"], updated_params,
             risk_level=risk_level, draft_id=draft_id,
+            conversation_id=draft.get("conversation_id", ""),
         )
 
         # ── Audit log ─────────────────────────────────────────────────────

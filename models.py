@@ -59,7 +59,6 @@ class ChatResponse(BaseModel):
     mode: str = "banking"
     # True when an existing duplicate confirmation token was reused
     is_duplicate: bool = False
-    # HIGH-01: new counterparty requires bank details before confirmation can proceed
     requires_recipient_details: bool = False
     # draft_id to pass to POST /api/v1/transfer/recipient-details
     pending_draft_id: Optional[str] = None
