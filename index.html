@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Sberik — AI Ассистент</title>
+<link rel="stylesheet" href="main.css"/>
+<link rel="preload" href="main.js" as="script"/>
+<style>
+  .stage-hint h1,
+  .welcome-greeting,
+  .header-title,
+  #chatTitle,
+  .dropdown-kicker,
+  .mode-choice strong {
+    font-family: var(--font-display);
+  }
+</style>
+</head>
+<body>
+
+<!-- Stage background -->
+<div class="stage">
+  <div class="stage-hint">
+    <h1>Sberik</h1>
+    <p>AI Ассистент · Нажмите на иконку →</p>
+  </div>
+</div>
+
+<!-- ═══ LAUNCHER ═══ -->
+<button class="launcher" id="launcher" aria-label="Открыть чат Sberik" title="Sberik AI">
+  <svg class="sberik-svg" id="launcherSvg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="8%"   stop-color="#7CECB8"/>
+        <stop offset="53%"  stop-color="#14D3C4"/>
+        <stop offset="100%" stop-color="#0D7B73"/>
+      </linearGradient>
+      <filter id="sberikShadowL" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+        <feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#11877E" flood-opacity="0.3"/>
+        <feDropShadow dx="0" dy="3" stdDeviation="2.5" flood-color="#000000" flood-opacity="0.07"/>
+      </filter>
+      <clipPath id="bodyClipL">
+        <path d="M32.6447 8.35789C41.1716 4.25151 45.4351 2.19833 50 2.19833C54.5649 2.19833 58.8284 4.25152 67.3554 8.3579L71.7362 10.4676C80.2632 14.574 84.5267 16.6272 87.3729 20.1961C90.219 23.7651 91.272 28.3786 93.378 37.6055L94.46 42.346C96.566 51.573 97.619 56.1865 96.6032 60.6369C95.5874 65.0873 92.637 68.787 86.7361 76.1865L83.7045 79.988C77.8036 87.3875 74.8532 91.0872 70.7404 93.0678C66.6276 95.0484 61.8954 95.0484 52.4312 95.0484H47.5688C38.1046 95.0484 33.3724 95.0484 29.2596 93.0678C25.1468 91.0872 22.1964 87.3875 16.2955 79.988L13.2639 76.1864C7.36302 68.787 4.41259 65.0873 3.39681 60.6369C2.38103 56.1865 3.43403 51.573 5.54002 42.346L6.62201 37.6055C8.728 28.3786 9.78099 23.7651 12.6271 20.1961C15.4733 16.6272 19.7368 14.574 28.2638 10.4676L32.6447 8.35789Z"/>
+      </clipPath>
+    </defs>
+    <g class="sberik-body" id="launcherBody">
+      <path class="sberik-shape" filter="url(#sberikShadowL)" d="M32.6447 8.35789C41.1716 4.25151 45.4351 2.19833 50 2.19833C54.5649 2.19833 58.8284 4.25152 67.3554 8.3579L71.7362 10.4676C80.2632 14.574 84.5267 16.6272 87.3729 20.1961C90.219 23.7651 91.272 28.3786 93.378 37.6055L94.46 42.346C96.566 51.573 97.619 56.1865 96.6032 60.6369C95.5874 65.0873 92.637 68.787 86.7361 76.1865L83.7045 79.988C77.8036 87.3875 74.8532 91.0872 70.7404 93.0678C66.6276 95.0484 61.8954 95.0484 52.4312 95.0484H47.5688C38.1046 95.0484 33.3724 95.0484 29.2596 93.0678C25.1468 91.0872 22.1964 87.3875 16.2955 79.988L13.2639 76.1864C7.36302 68.787 4.41259 65.0873 3.39681 60.6369C2.38103 56.1865 3.43403 51.573 5.54002 42.346L6.62201 37.6055C8.728 28.3786 9.78099 23.7651 12.6271 20.1961C15.4733 16.6272 19.7368 14.574 28.2638 10.4676L32.6447 8.35789Z"
+            fill="url(#bodyGrad)"/>
+      <g clip-path="url(#bodyClipL)">
+        <rect class="sberik-eye" id="launcherEyeL" x="28" y="26" width="17" height="27" rx="6.5"/>
+        <rect class="sberik-eye" id="launcherEyeR" x="55" y="26" width="17" height="27" rx="6.5"/>
+      </g>
+    </g>
+  </svg>
+</button>
+
+<!-- ═══ MAIN WIDGET ═══ -->
+<div class="widget" id="widget" role="dialog" aria-label="Sberik AI Чат" aria-hidden="true">
+
+  <!-- Header -->
+  <div class="widget-header" id="widgetHeader">
+    <div class="header-left">
+      <!-- Mini avatar shown after first message -->
+      <div class="header-avatar-wrap" id="headerAvatarWrap">
+        <svg class="sberik-svg" id="headerAvatarSvg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="bodyGradH" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="8%"   stop-color="#7CECB8"/>
+              <stop offset="53%"  stop-color="#14D3C4"/>
+              <stop offset="100%" stop-color="#0D7B73"/>
+            </linearGradient>
+            <filter id="sberikShadowH" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+              <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#11877E" flood-opacity="0.22"/>
+            </filter>
+            <clipPath id="bodyClipH">
+              <path d="M32.6447 8.35789C41.1716 4.25151 45.4351 2.19833 50 2.19833C54.5649 2.19833 58.8284 4.25152 67.3554 8.3579L71.7362 10.4676C80.2632 14.574 84.5267 16.6272 87.3729 20.1961C90.219 23.7651 91.272 28.3786 93.378 37.6055L94.46 42.346C96.566 51.573 97.619 56.1865 96.6032 60.6369C95.5874 65.0873 92.637 68.787 86.7361 76.1865L83.7045 79.988C77.8036 87.3875 74.8532 91.0872 70.7404 93.0678C66.6276 95.0484 61.8954 95.0484 52.4312 95.0484H47.5688C38.1046 95.0484 33.3724 95.0484 29.2596 93.0678C25.1468 91.0872 22.1964 87.3875 16.2955 79.988L13.2639 76.1864C7.36302 68.787 4.41259 65.0873 3.39681 60.6369C2.38103 56.1865 3.43403 51.573 5.54002 42.346L6.62201 37.6055C8.728 28.3786 9.78099 23.7651 12.6271 20.1961C15.4733 16.6272 19.7368 14.574 28.2638 10.4676L32.6447 8.35789Z"/>
+            </clipPath>
+          </defs>
+          <g class="sberik-body">
+            <path class="sberik-shape" filter="url(#sberikShadowH)" d="M32.6447 8.35789C41.1716 4.25151 45.4351 2.19833 50 2.19833C54.5649 2.19833 58.8284 4.25152 67.3554 8.3579L71.7362 10.4676C80.2632 14.574 84.5267 16.6272 87.3729 20.1961C90.219 23.7651 91.272 28.3786 93.378 37.6055L94.46 42.346C96.566 51.573 97.619 56.1865 96.6032 60.6369C95.5874 65.0873 92.637 68.787 86.7361 76.1865L83.7045 79.988C77.8036 87.3875 74.8532 91.0872 70.7404 93.0678C66.6276 95.0484 61.8954 95.0484 52.4312 95.0484H47.5688C38.1046 95.0484 33.3724 95.0484 29.2596 93.0678C25.1468 91.0872 22.1964 87.3875 16.2955 79.988L13.2639 76.1864C7.36302 68.787 4.41259 65.0873 3.39681 60.6369C2.38103 56.1865 3.43403 51.573 5.54002 42.346L6.62201 37.6055C8.728 28.3786 9.78099 23.7651 12.6271 20.1961C15.4733 16.6272 19.7368 14.574 28.2638 10.4676L32.6447 8.35789Z"
+                  fill="url(#bodyGradH)"/>
+            <g clip-path="url(#bodyClipH)">
+              <rect class="sberik-eye" id="headerEyeL" x="28" y="26" width="17" height="27" rx="6.5"/>
+              <rect class="sberik-eye" id="headerEyeR" x="55" y="26" width="17" height="27" rx="6.5"/>
+            </g>
+          </g>
+        </svg>
+      </div>
+      <button class="header-title" id="chatTitleBtn" type="button" aria-expanded="false" aria-controls="chatDropdown">
+        <span id="chatTitle">Новый ИИ Чат</span>
+        <span class="header-caret">
+          <svg width="18" height="10" viewBox="0 0 14 8" fill="none" aria-hidden="true">
+            <path d="M1 1L7 7L13 1" stroke="#B1B1B1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+      </button>
+    </div>
+    <div class="header-actions">
+      <button class="icon-btn" id="operatorBtn" title="Связаться с оператором" aria-label="Оператор">
+        <img src="icon/tabler_user-question.svg" alt="" aria-hidden="true">
+      </button>
+      <button class="icon-btn minimize-btn" id="minimizeBtn" title="Свернуть" aria-label="Свернуть чат">
+        <img src="icon/tabler_menu.svg" alt="" aria-hidden="true">
+      </button>
+    </div>
+  </div>
+
+  <!-- Body -->
+  <div class="view">
+    <!-- Welcome screen -->
+    <div class="screen-welcome" id="screenWelcome">
+      <div class="welcome-logo-row">
+        <svg class="welcome-avatar sberik-svg" id="welcomeAvatarSvg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="bodyGradW" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="8%"   stop-color="#7CECB8"/>
+              <stop offset="53%"  stop-color="#14D3C4"/>
+              <stop offset="100%" stop-color="#0D7B73"/>
+            </linearGradient>
+            <filter id="sberikShadowW" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+              <feDropShadow dx="0" dy="8" stdDeviation="7" flood-color="#11877E" flood-opacity="0.26"/>
+              <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.06"/>
+            </filter>
+            <clipPath id="bodyClipW">
+              <path d="M32.6447 8.35789C41.1716 4.25151 45.4351 2.19833 50 2.19833C54.5649 2.19833 58.8284 4.25152 67.3554 8.3579L71.7362 10.4676C80.2632 14.574 84.5267 16.6272 87.3729 20.1961C90.219 23.7651 91.272 28.3786 93.378 37.6055L94.46 42.346C96.566 51.573 97.619 56.1865 96.6032 60.6369C95.5874 65.0873 92.637 68.787 86.7361 76.1865L83.7045 79.988C77.8036 87.3875 74.8532 91.0872 70.7404 93.0678C66.6276 95.0484 61.8954 95.0484 52.4312 95.0484H47.5688C38.1046 95.0484 33.3724 95.0484 29.2596 93.0678C25.1468 91.0872 22.1964 87.3875 16.2955 79.988L13.2639 76.1864C7.36302 68.787 4.41259 65.0873 3.39681 60.6369C2.38103 56.1865 3.43403 51.573 5.54002 42.346L6.62201 37.6055C8.728 28.3786 9.78099 23.7651 12.6271 20.1961C15.4733 16.6272 19.7368 14.574 28.2638 10.4676L32.6447 8.35789Z"/>
+            </clipPath>
+          </defs>
+          <g class="sberik-body" id="welcomeBody">
+            <path class="sberik-shape" filter="url(#sberikShadowW)" d="M32.6447 8.35789C41.1716 4.25151 45.4351 2.19833 50 2.19833C54.5649 2.19833 58.8284 4.25152 67.3554 8.3579L71.7362 10.4676C80.2632 14.574 84.5267 16.6272 87.3729 20.1961C90.219 23.7651 91.272 28.3786 93.378 37.6055L94.46 42.346C96.566 51.573 97.619 56.1865 96.6032 60.6369C95.5874 65.0873 92.637 68.787 86.7361 76.1865L83.7045 79.988C77.8036 87.3875 74.8532 91.0872 70.7404 93.0678C66.6276 95.0484 61.8954 95.0484 52.4312 95.0484H47.5688C38.1046 95.0484 33.3724 95.0484 29.2596 93.0678C25.1468 91.0872 22.1964 87.3875 16.2955 79.988L13.2639 76.1864C7.36302 68.787 4.41259 65.0873 3.39681 60.6369C2.38103 56.1865 3.43403 51.573 5.54002 42.346L6.62201 37.6055C8.728 28.3786 9.78099 23.7651 12.6271 20.1961C15.4733 16.6272 19.7368 14.574 28.2638 10.4676L32.6447 8.35789Z"
+                  fill="url(#bodyGradW)"/>
+            <g clip-path="url(#bodyClipW)">
+              <rect class="sberik-eye" id="welcomeEyeL" x="28" y="26" width="17" height="27" rx="6.5"/>
+              <rect class="sberik-eye" id="welcomeEyeR" x="55" y="26" width="17" height="27" rx="6.5"/>
+            </g>
+          </g>
+        </svg>
+      </div>
+      <div class="welcome-greeting">Здраствуйте, чем могу помочь?</div>
+      <div class="welcome-chips" id="quickChips">
+        <button class="chip-btn" data-prompt="Создать отчет">
+          <span class="chip-icon"><img src="icon/tabler_file.svg" alt="" aria-hidden="true"></span>
+          Создать отчет
+        </button>
+        <button class="chip-btn" data-prompt="Проанализировать отчет">
+          <span class="chip-icon"><img src="icon/tabler_file-ai.svg" alt="" aria-hidden="true"></span>
+          Проанализировать отчет
+        </button>
+        <button class="chip-btn" data-prompt="Отсортировать данные">
+          <span class="chip-icon"><img src="icon/tabler_filter.svg" alt="" aria-hidden="true"></span>
+          Отсортировать данные
+        </button>
+      </div>
+    </div>
+
+    <!-- Messages screen -->
+    <div class="messages-scroll-wrap" id="messagesScrollWrap">
+      <div class="screen-messages" id="screenMessages" aria-live="polite" aria-label="Сообщения чата">
+      </div>
+    </div>
+
+    <!-- Operator support -->
+    <div class="screen-operator" id="screenOperator" aria-label="Чат с оператором">
+      <div class="op-searching" id="opSearching">
+        <span class="op-empty-icon">
+          <img src="icon/smile.svg" alt="" aria-hidden="true">
+        </span>
+        <span>Ищем свободного оператора</span>
+      </div>
+      <div class="op-messages" id="opMessages"></div>
+    </div>
+  </div>
+
+  <!-- Composer -->
+  <div class="composer-wrap">
+    <div class="composer" id="composer">
+      <textarea id="chatInput" placeholder="Напишите что нибудь здесь..." rows="1" aria-label="Ввод сообщения"></textarea>
+      <div class="composer-bar">
+        <div class="composer-left">
+          <button class="composer-icon-btn" title="Прикрепить" aria-label="Прикрепить файл">
+            <img src="icon/tabler_plus.svg" alt="" aria-hidden="true">
+          </button>
+          <button class="composer-icon-btn" id="composerSettingsBtn" title="Настройки" aria-label="Настройки ввода">
+            <img src="icon/tabler_settings-2.svg" alt="" aria-hidden="true">
+          </button>
+        </div>
+        <div class="composer-right">
+          <button class="composer-icon-btn" title="Голосовой ввод" aria-label="Голосовой ввод">
+            <img src="icon/tabler_microphone.svg" alt="" aria-hidden="true">
+          </button>
+          <button class="send-btn" id="sendBtn" title="Отправить" aria-label="Отправить сообщение" disabled>
+            <img id="sendBtnIcon" src="icon/tabler_square-rounded-arrow-up.svg" alt="" aria-hidden="true">
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ FLOATING OVERLAYS ═══ -->
+<div class="overlay-root" id="overlayRoot">
+  <div class="chat-dropdown" id="chatDropdown">
+    <button class="dropdown-item dropdown-new-chat" id="chatDropdownNewBtn" type="button">
+      <span>+ Новый чат</span>
+    </button>
+    <div class="dropdown-divider-line"></div>
+    <div class="dropdown-kicker">Прошлые чаты</div>
+    <div class="dropdown-history-list" id="historyList">
+      <div class="dropdown-empty" id="historyEmpty">История чатов отсутствует</div>
+    </div>
+  </div>
+
+  <div class="settings-panel" id="settingsPanel" role="menu">
+    <button class="settings-item" id="settingFinance" role="menuitem">
+      <span class="settings-item-icon"><img src="icon/tabler_eye.svg" alt="" aria-hidden="true"></span>
+      <span class="settings-item-label">Финансы и Налоги</span>
+      <div class="toggle-wrap on" id="financeToggle"></div>
+    </button>
+    <button class="settings-item" id="modeMenuBtn" role="menuitem" aria-controls="modeFlyout" aria-expanded="false">
+      <span class="settings-item-icon"><img src="icon/tabler_pencil-cog.svg" alt="" aria-hidden="true"></span>
+      <span class="settings-item-label">Режим ассистента</span>
+      <span class="settings-item-value" id="modeValue">Финансы</span>
+      <img src="icon/Vector.svg" alt="" aria-hidden="true" style="width:10px;height:18px;margin-left:2px">
+    </button>
+    <button class="settings-item" id="sourcesMenuBtn" role="menuitem" aria-controls="sourcesFlyout" aria-expanded="false">
+      <span class="settings-item-icon"><img src="icon/tabler_database.svg" alt="" aria-hidden="true"></span>
+      <span class="settings-item-label">Источники данных</span>
+      <span class="settings-item-value" id="sourcesCount">3</span>
+      <img src="icon/Vector.svg" alt="" aria-hidden="true" style="width:10px;height:18px;margin-left:2px">
+    </button>
+    <div class="settings-divider"></div>
+    <button class="settings-item" id="deleteChatBtn" role="menuitem">
+      <span class="settings-item-icon"><img src="icon/tabler_trash.svg" alt="" aria-hidden="true"></span>
+      <span class="settings-item-label">Удалить чат</span>
+    </button>
+  </div>
+
+  <div class="settings-flyout" id="modeFlyout" role="menu" aria-label="Выбор режима ассистента">
+    <button class="mode-choice active" data-mode="Финансы" role="menuitemradio" aria-checked="true">
+      <span class="dropdown-icon"><img src="icon/tabler_cash.svg" alt="" aria-hidden="true"></span>
+      <strong>Финансы и Налоги</strong>
+      <span>Сберик общается строго, перепроверяет цифры, помогает с ФНС</span>
+    </button>
+    <button class="mode-choice" data-mode="Аналитика" role="menuitemradio" aria-checked="false">
+      <span class="dropdown-icon"><img src="icon/tabler_chart-histogram.svg" alt="" aria-hidden="true"></span>
+      <strong>Аналитика и Бизнес</strong>
+      <span>Сберик строит графики и ищет аномалии в расходах</span>
+    </button>
+    <button class="mode-choice" data-mode="Креатив" role="menuitemradio" aria-checked="false">
+      <span class="dropdown-icon"><img src="icon/tabler_butterfly.svg" alt="" aria-hidden="true"></span>
+      <strong>Креатив / Онбординг</strong>
+      <span>Помогает составлять описания товаров для маркетплейсов или тексты вакансий</span>
+    </button>
+  </div>
+
+  <div class="settings-flyout sources" id="sourcesFlyout" role="menu" aria-label="Источники данных">
+    <button class="settings-item source-row" data-source="all" role="menuitem">
+      <span class="settings-item-icon"><img src="icon/tabler_user-key.svg" alt="" aria-hidden="true"></span>
+      <span class="settings-item-label">Все ресурсы</span>
+      <div class="toggle-wrap on"></div>
+    </button>
+    <button class="settings-item source-row" data-source="statements" role="menuitem">
+      <span class="settings-item-icon"><img src="icon/tabler_cash-banknote.svg" alt="" aria-hidden="true"></span>
+      <span class="settings-item-label">Выписки и счета</span>
+      <div class="toggle-wrap on"></div>
+    </button>
+    <button class="settings-item source-row" data-source="docs" role="menuitem">
+      <span class="settings-item-icon"><img src="icon/tabler_clipboard.svg" alt="" aria-hidden="true"></span>
+      <span class="settings-item-label">Документы и договоры</span>
+      <div class="toggle-wrap on"></div>
+    </button>
+    <button class="settings-item source-row" data-source="web" role="menuitem">
+      <span class="settings-item-icon"><img src="icon/tabler_world.svg" alt="" aria-hidden="true"></span>
+      <span class="settings-item-label">Внешний веб-доступ</span>
+      <div class="toggle-wrap on"></div>
+    </button>
+  </div>
+</div>
+
+<script src="main.js" defer></script>
+</body>
+</html>
