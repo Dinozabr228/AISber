@@ -631,9 +631,7 @@ app.add_middleware(
 app.mount("/icon", StaticFiles(directory="icon"), name="icon")
 app.mount("/fonts", StaticFiles(directory="fonts"), name="fonts")
 
-_SBBOL_DIR = pathlib.Path("C:/сбербизнес")
-_SBBOL_ASSETS = _SBBOL_DIR / "СберБизнес — интернет-банк_files"
-
+_SBBOL_ASSETS = pathlib.Path(__file__).parent.resolve()
 
 @app.get("/sbbol-assets/{path:path}")
 async def sbbol_asset(path: str) -> FileResponse:
