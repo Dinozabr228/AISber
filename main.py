@@ -631,7 +631,9 @@ app.add_middleware(
 app.mount("/icon", StaticFiles(directory="icon"), name="icon")
 app.mount("/fonts", StaticFiles(directory="fonts"), name="fonts")
 
-_SBBOL_ASSETS = pathlib.Path(__file__).parent.resolve()
+
+_SBBOL_DIR = pathlib.Path(__file__).parent.resolve()
+_SBBOL_ASSETS = _SBBOL_DIR
 
 @app.get("/sbbol-assets/{path:path}")
 async def sbbol_asset(path: str) -> FileResponse:
@@ -1009,8 +1011,8 @@ def _build_demo_html() -> str:
 
 @app.get("/demo", response_class=HTMLResponse)
 async def demo_page() -> HTMLResponse:
-    if not (_SBBOL_DIR / "СберБизнес — интернет-банк.html").exists():
-        raise HTTPException(status_code=404, detail="Demo file not found at C:/сбербизнес/")
+    if not (_SBBOL_DIR / "index.html").exists():
+        raise HTTPException(status_code=404, detail="Файл интерфейса не найден")
     return HTMLResponse(_inject_api_key(_build_demo_html()))
 
 
