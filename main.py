@@ -344,7 +344,7 @@ def _safe_context_params(action: str, parameters: dict) -> dict[str, str]:
         if parameters.get("period"):
             safe["period"] = str(parameters["period"])[:50]
     # initiate_transfer: amount and recipient are sensitive — not stored
-    # get_balance, get_tariffs, get_requisites, get_counterparties, get_favorites: no params
+    # get_tariffs, get_requisites, get_counterparties, get_favorites: no params
     return safe
 
 
@@ -355,7 +355,6 @@ _TOPIC_STRIP_RE = re.compile(r'[\[\]{}]')
 # ---------------------------------------------------------------------------
 
 _ACTION_TITLES: dict[str, str] = {
-    "get_balance":        "Баланс счёта",
     "get_transactions":   "Последние операции",
     "initiate_transfer":  "Перевод средств",
     "navigate":           "Навигация по банку",
@@ -1530,6 +1529,44 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     # Banking mode informational response (action=None returned by Gemini)
     if action is None:
+        # Transfer intent with missing params → return blank/partial form instead of
+        # asking for clarification in text. Covers "сделай перевод", "хочу перевести" etc.
+        _is_transfer_intent = gemini_resp.intent in {
+            "initiate_transfer", "transfer", "make_transfer", "перевод",
+            "payment", "new_transfer", "open_transfer", "платёж", "платеж",
+            "перечисление", "перевести", "create_transfer",
+        } or "transfer" in gemini_resp.intent.lower() or "payment" in gemini_resp.intent.lower()
+        if _is_transfer_intent:
+            prefill: dict[str, Any] = {}
+            if parameters.get("amount") is not None:
+                prefill["amount"] = parameters["amount"]
+            if parameters.get("recipient"):
+                prefill["recipient"] = parameters["recipient"]
+            if parameters.get("purpose"):
+                prefill["purpose"] = parameters["purpose"]
+            _update_context(conversation_id, None, {}, intent=gemini_resp.intent)
+            _write_audit(
+                user_id=user_id,
+                action="none",
+                parameters=parameters,
+                risk_level="LOW",
+                result="transfer_form_shown",
+                conversation_id=conversation_id,
+                mode=req_mode,
+            )
+            _store_message(conversation_id, "ai", gemini_resp.user_message)
+            _record_response_time((time.monotonic() - t_start) * 1000)
+            return ChatResponse(
+                user_message=gemini_resp.user_message,
+                action_result=None,
+                requires_confirmation=False,
+                confirmation_message=None,
+                conversation_id=conversation_id,
+                mode=req_mode,
+                requires_transfer_form=True,
+                transfer_prefill=prefill if prefill else None,
+            )
+
         _update_context(conversation_id, None, {}, intent=gemini_resp.intent)
         _write_audit(
             user_id=user_id,

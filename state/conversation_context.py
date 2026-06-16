@@ -200,9 +200,6 @@ def _summarise_result(result: dict[str, Any]) -> dict[str, Any]:
         txs = result["transactions"]
         summary["tx_count"] = len(txs)
         summary["tx_types"] = list({t.get("type") for t in txs if t.get("type")})
-    # Balance: remember range only (not exact amount)
-    if "balance_range" in result:
-        summary["balance_range"] = result["balance_range"]
     # Report: remember period and totals
     if "income" in result:
         summary["income"] = result.get("income")

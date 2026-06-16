@@ -62,6 +62,9 @@ class ChatResponse(BaseModel):
     requires_recipient_details: bool = False
     # draft_id to pass to POST /api/v1/transfer/recipient-details
     pending_draft_id: Optional[str] = None
+    # True when transfer intent detected but params missing — show blank/partial form
+    requires_transfer_form: bool = False
+    transfer_prefill: Optional[dict] = None
 
 
 class ConfirmRequest(BaseModel):

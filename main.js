@@ -121,6 +121,15 @@ const AIService = {
     const data = await r.json();
     if (data.conversation_id) _conversationId = data.conversation_id;
 
+    // Transfer intent without params — show blank/partial form
+    if (data.requires_transfer_form) {
+      return {
+        _needsTransferForm: true,
+        message: data.user_message,
+        prefill: data.transfer_prefill || {},
+      };
+    }
+
     // HIGH-01: new counterparty — show details form before confirmation
     if (data.requires_recipient_details && data.pending_draft_id) {
       return {
@@ -164,14 +173,6 @@ function _navigateToSection(sectionId) {
 }
 
 function _formatResult(r) {
-  if (r.currency && r.company_name && r.as_of) {
-    var balanceStr = (r.balance != null && r.balance !== '***')
-      ? Number(r.balance).toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' ' + r.currency
-      : (r.balance_range || '***');
-    return '🏦 ' + r.company_name
-      + '\nБаланс: ' + balanceStr
-      + '\nНа дату: ' + r.as_of;
-  }
   if (r.transactions) {
     let lines = ['📋 ' + (r.company_name ? r.company_name + ' — ' : '') + 'Операции по счёту:'];
     r.transactions.forEach(function(tx) {
@@ -773,6 +774,11 @@ function appendMessage(role, content, confirmData = null) {
 
   bubble.appendChild(text);
 
+  // Transfer form — blank or partially prefilled
+  if (confirmData && confirmData._needsTransferForm) {
+    bubble.appendChild(_buildTransferFormPanel(confirmData.prefill || {}, bubble));
+  }
+
   // HIGH-01: recipient details form
   if (confirmData && confirmData._needsRecipientDetails) {
     const rdPanel = _buildRecipientDetailsPanel(
@@ -897,6 +903,121 @@ function appendMessage(role, content, confirmData = null) {
 }
 
 /* ──────────────────────────────────────────────
+   Transfer draft form — blank or prefilled
+   ────────────────────────────────────────────── */
+
+function _buildTransferFormPanel(prefill, bubble) {
+  const panel = document.createElement('div');
+  panel.className = 'confirm-panel transfer-form-panel';
+
+  const hdr = document.createElement('div');
+  hdr.className = 'draft-title';
+  hdr.textContent = 'Черновик платёжного поручения';
+  panel.appendChild(hdr);
+
+  function makeField(labelText, inputId, placeholder, type) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'margin-bottom:10px;';
+    const lbl = document.createElement('label');
+    lbl.htmlFor = inputId;
+    lbl.style.cssText = 'display:block;font-size:12px;color:#6b7280;margin-bottom:3px;';
+    lbl.textContent = labelText;
+    const inp = document.createElement('input');
+    inp.id = inputId;
+    inp.type = type || 'text';
+    inp.style.cssText = 'width:100%;padding:7px 10px;border:1px solid #d1d5db;border-radius:6px;'
+      + 'font-size:13px;box-sizing:border-box;font-family:inherit;outline:none;transition:border-color .15s;';
+    inp.placeholder = placeholder;
+    inp.addEventListener('focus', () => { inp.style.borderColor = '#107f8c'; });
+    inp.addEventListener('blur',  () => { inp.style.borderColor = ''; });
+    wrap.appendChild(lbl);
+    wrap.appendChild(inp);
+    return { wrap, inp };
+  }
+
+  const uid = '_tf_' + Math.random().toString(36).slice(2, 8);
+  const { wrap: wR, inp: recipientInp } = makeField('Получатель (юридическое лицо)', uid + '_rec', 'ООО «Название компании»');
+  const { wrap: wA, inp: amountInp }    = makeField('Сумма (BYN)', uid + '_amt', '0.00', 'number');
+  const { wrap: wP, inp: purposeInp }   = makeField('Назначение платежа (необязательно)', uid + '_pur', 'Оплата по договору №…');
+
+  if (prefill.recipient) recipientInp.value = prefill.recipient;
+  if (prefill.amount != null) amountInp.value = prefill.amount;
+  if (prefill.purpose) purposeInp.value = prefill.purpose;
+
+  panel.appendChild(wR);
+  panel.appendChild(wA);
+  panel.appendChild(wP);
+
+  const errEl = document.createElement('div');
+  errEl.style.cssText = 'color:#dc2626;font-size:12px;margin-top:2px;min-height:16px;';
+  panel.appendChild(errEl);
+
+  const btnsEl = document.createElement('div');
+  btnsEl.className = 'confirm-btns';
+
+  const submitBtn = document.createElement('button');
+  submitBtn.className = 'confirm-btn confirm-yes';
+  submitBtn.textContent = 'Создать перевод';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'confirm-btn confirm-no';
+  cancelBtn.textContent = 'Отменить';
+
+  cancelBtn.onclick = () => {
+    panel.remove();
+    appendMessage('ai', 'Черновик перевода отменён.');
+  };
+
+  submitBtn.onclick = async () => {
+    errEl.textContent = '';
+    const recipient = recipientInp.value.trim();
+    const amountRaw = amountInp.value.trim();
+    const purpose   = purposeInp.value.trim();
+
+    if (!recipient) { errEl.textContent = 'Укажите получателя.'; recipientInp.focus(); return; }
+    const amount = parseFloat(amountRaw.replace(',', '.'));
+    if (!amountRaw || isNaN(amount) || amount <= 0) {
+      errEl.textContent = 'Укажите корректную сумму.'; amountInp.focus(); return;
+    }
+
+    submitBtn.disabled = true;
+    cancelBtn.disabled = true;
+    submitBtn.textContent = 'Отправляем…';
+
+    // Build a natural-language message so the normal banking pipeline runs
+    let msg = `переведи ${amount} BYN компании ${recipient}`;
+    if (purpose) msg += `. Назначение: ${purpose}`;
+
+    panel.remove();
+    try {
+      const reply = await AIService.getReply(msg);
+      if (reply && reply._needsRecipientDetails) {
+        appendMessage('ai', reply.message, {
+          _needsRecipientDetails: true,
+          draftId: reply.draftId,
+          draftDetails: reply.draftDetails,
+          riskLevel: reply.riskLevel,
+        });
+      } else if (reply && reply._needsConfirm) {
+        appendMessage('ai', reply.message, { token: reply.token, draftDetails: reply.draftDetails });
+      } else {
+        appendMessage('ai', typeof reply === 'string' ? reply : (reply.message || 'Готово.'));
+      }
+    } catch (e) {
+      appendMessage('ai', 'Ошибка: ' + (e.message || 'Попробуйте ещё раз.'));
+    }
+  };
+
+  amountInp.min = '0.01';
+  amountInp.step = '0.01';
+
+  btnsEl.appendChild(submitBtn);
+  btnsEl.appendChild(cancelBtn);
+  panel.appendChild(btnsEl);
+  return panel;
+}
+
+/* ──────────────────────────────────────────────
    HIGH-01: Recipient details form
    ────────────────────────────────────────────── */
 
@@ -997,6 +1118,78 @@ function _buildRecipientDetailsPanel(draftId, draftDetails, riskLevel, bubble) {
   errEl.style.cssText = 'color:#dc2626;font-size:12px;margin-top:4px;min-height:16px;';
   panel.appendChild(errEl);
 
+  // CAPTCHA — shown when account starts with BY
+  let _captchaAnswer = 0;
+  let _captchaPassed = false;
+
+  const captchaWrap = document.createElement('div');
+  captchaWrap.className = 'captcha-wrap';
+  captchaWrap.style.display = 'none';
+
+  const captchaLabel = document.createElement('div');
+  captchaLabel.className = 'captcha-label';
+  captchaWrap.appendChild(captchaLabel);
+
+  const captchaInp = document.createElement('input');
+  captchaInp.type = 'text';
+  captchaInp.inputMode = 'numeric';
+  captchaInp.className = 'captcha-input';
+  captchaInp.placeholder = 'Ваш ответ';
+  captchaInp.maxLength = 3;
+  captchaWrap.appendChild(captchaInp);
+
+  const captchaHint = document.createElement('div');
+  captchaHint.className = 'captcha-hint';
+  captchaWrap.appendChild(captchaHint);
+
+  panel.appendChild(captchaWrap);
+
+  function _generateCaptcha() {
+    const a = Math.floor(Math.random() * 9) + 1;
+    const b = Math.floor(Math.random() * 9) + 1;
+    _captchaAnswer = a + b;
+    _captchaPassed = false;
+    captchaLabel.textContent = `Подтвердите перевод на BY-счёт: ${a} + ${b} = ?`;
+    captchaInp.value = '';
+    captchaInp.style.borderColor = '';
+    captchaHint.textContent = '';
+    submitBtn.disabled = true;
+    submitBtn.classList.add('confirm-btn-locked');
+  }
+
+  captchaInp.addEventListener('input', () => {
+    const val = parseInt(captchaInp.value.trim(), 10);
+    if (val === _captchaAnswer) {
+      _captchaPassed = true;
+      captchaInp.style.borderColor = '#16a34a';
+      captchaHint.textContent = '';
+      submitBtn.disabled = false;
+      submitBtn.classList.remove('confirm-btn-locked');
+    } else {
+      _captchaPassed = false;
+      captchaInp.style.borderColor = captchaInp.value ? '#dc2626' : '';
+      captchaHint.textContent = captchaInp.value ? 'Неверный ответ' : '';
+      submitBtn.disabled = true;
+      submitBtn.classList.add('confirm-btn-locked');
+    }
+  });
+
+  // Show/hide captcha when account field changes
+  accountInp.addEventListener('input', () => {
+    const norm = accountInp.value.trim().toUpperCase().replace(/\s/g, '');
+    if (norm.startsWith('BY') && norm.length >= 4) {
+      if (captchaWrap.style.display === 'none') {
+        captchaWrap.style.display = '';
+        _generateCaptcha();
+      }
+    } else {
+      captchaWrap.style.display = 'none';
+      _captchaPassed = true;
+      submitBtn.disabled = false;
+      submitBtn.classList.remove('confirm-btn-locked');
+    }
+  });
+
   const btnsEl = document.createElement('div');
   btnsEl.className = 'confirm-btns';
 
@@ -1021,6 +1214,12 @@ function _buildRecipientDetailsPanel(draftId, draftDetails, riskLevel, bubble) {
     const purpose  = purposeInp.value.trim();
 
     if (!account) { errEl.textContent = 'Укажите номер счёта.'; return; }
+    const accountNormCheck = account.toUpperCase().replace(/\s/g, '');
+    if (accountNormCheck.startsWith('BY') && !_captchaPassed) {
+      errEl.textContent = 'Решите проверочный пример для продолжения.';
+      captchaInp.focus();
+      return;
+    }
     const accountNorm = account.toUpperCase().replace(/\s/g, '');
     if (accountNorm.startsWith('BY')) {
       if (!/^BY\d{2}[A-Z0-9]{24}$/.test(accountNorm)) {
@@ -1156,7 +1355,9 @@ async function sendMessage(text) {
   try {
     const reply = await AIService.getReply(text);
     hideTyping();
-    if (reply && reply._needsRecipientDetails) {
+    if (reply && reply._needsTransferForm) {
+      appendMessage('ai', reply.message, { _needsTransferForm: true, prefill: reply.prefill });
+    } else if (reply && reply._needsRecipientDetails) {
       // HIGH-01: unknown counterparty — show details form
       appendMessage('ai', reply.message, {
         _needsRecipientDetails: true,
@@ -1691,6 +1892,13 @@ style.textContent = `
 .draft-warnings { background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:8px 10px; margin-top:8px; font-size:12px; color:#92400e; }
 .draft-warn-title { font-weight:700; margin-bottom:4px; }
 .draft-warning-item { margin:2px 0; }
+.transfer-form-panel { background:#f0fdfa; border:1px solid #a7f3d0; border-radius:10px; padding:12px 14px; margin-top:4px; }
+.captcha-wrap { background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:10px 12px; margin-top:10px; margin-bottom:2px; }
+.captcha-label { font-size:13px; font-weight:600; color:#92400e; margin-bottom:6px; }
+.captcha-input { width:100%; padding:7px 10px; border:1px solid #d1d5db; border-radius:6px; font-size:14px; box-sizing:border-box; font-family:inherit; outline:none; transition:border-color .15s; }
+.captcha-input:focus { border-color:#107f8c; }
+.captcha-hint { font-size:11px; color:#dc2626; margin-top:3px; min-height:14px; }
+.confirm-btn-locked { opacity:.45; cursor:not-allowed !important; }
 `;
 document.head.appendChild(style);
 

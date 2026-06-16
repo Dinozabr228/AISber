@@ -1,5 +1,4 @@
 ALLOWED_ACTIONS: list[str] = [
-    "get_balance",
     "get_transactions",
     "create_report",
     "initiate_transfer",

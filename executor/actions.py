@@ -111,21 +111,6 @@ def _amount_range(amount: float) -> str:
     return "свыше 100 000 BYN"
 
 
-def _balance_range(balance: float) -> str:
-    """Coarse balance range — exact balance is never exposed to clients."""
-    if balance < 5_000:
-        return "до 5 000 BYN"
-    if balance < 10_000:
-        return "до 10 000 BYN"
-    if balance < 50_000:
-        return "до 50 000 BYN"
-    if balance < 100_000:
-        return "до 100 000 BYN"
-    if balance < 200_000:
-        return "до 200 000 BYN"
-    return "свыше 200 000 BYN"
-
-
 def _current_period() -> str:
     now = datetime.now(timezone.utc)
     return f"{_MONTH_NAMES[now.month]} {now.year}"
@@ -242,8 +227,6 @@ class ActionExecutor:
         if not validate_action(action):
             raise ValueError(f"Действие «{action}» не входит в список разрешённых операций.")
 
-        if action == "get_balance":
-            return self._get_balance(user_id)
         if action == "get_transactions":
             return self._get_transactions(
                 user_id,
@@ -276,26 +259,6 @@ class ActionExecutor:
             return self._get_favorites(user_id)
 
         raise ValueError(f"Маршрут для действия «{action}» не определён.")
-
-    # ------------------------------------------------------------------
-    # get_balance — exact balance masked; only coarse range returned
-    # ------------------------------------------------------------------
-
-    def _get_balance(self, user_id: str) -> dict[str, Any]:
-        try:
-            user = _require_user(user_id)
-            balance: float = user["balance"]
-            return {
-                "balance": round(balance, 2),
-                "balance_range": _balance_range(balance),
-                "currency": "BYN",
-                "company_name": user["company_name"],
-                "as_of": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-            }
-        except (KeyError, ValueError):
-            raise
-        except Exception as exc:
-            raise RuntimeError(f"Ошибка при получении баланса: {exc}") from exc
 
     # ------------------------------------------------------------------
     # get_transactions — last 5 operations with exact amounts
@@ -598,8 +561,6 @@ def _require_user(user_id: str) -> dict[str, Any]:
 from difflib import get_close_matches as _get_close_matches
 
 KNOWN_INTENTS: dict[str, str] = {
-    "баланс": "get_balance",
-    "счёт": "get_balance",
     "выписка": "get_transactions",
     "история": "get_transactions",
     "операции": "get_transactions",
