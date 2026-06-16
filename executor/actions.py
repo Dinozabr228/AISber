@@ -49,7 +49,10 @@ def _filter_history_by_period(history: list[dict], period: str) -> list[dict]:
     """Filter transaction history by period string.
 
     Accepts: 'last_month', 'current_month', 'май 2026', 'май', '2026'.
-    Returns full history if period cannot be parsed — graceful degradation.
+    Returns full history only when the period string itself can't be
+    interpreted (no year/month found) — graceful degradation. A period
+    that parses fine but matches zero transactions returns an empty list:
+    that's a real answer ("no operations in that period"), not a parse failure.
     """
     if not period:
         return history
@@ -87,7 +90,37 @@ def _filter_history_by_period(history: list[dict], period: str) -> list[dict]:
         except (ValueError, TypeError):
             pass
 
-    return filtered if filtered else history
+    return filtered
+
+
+def _filter_history_by_range(history: list[dict], date_from: str, date_to: str) -> list[dict]:
+    """Filter transaction history by an explicit [date_from, date_to] range (inclusive).
+
+    Dates are expected as ISO 'YYYY-MM-DD'. Returns full history only when
+    the bounds themselves are unparseable or inverted (date_from > date_to) —
+    that's a malformed request, not a real query. A well-formed range that
+    matches zero transactions returns an empty list, since the user asked
+    for a specific period and "no operations" is the correct answer.
+    """
+    try:
+        start = datetime.fromisoformat(date_from).date()
+        end = datetime.fromisoformat(date_to).date()
+    except (ValueError, TypeError):
+        return history
+    if start > end:
+        return history
+
+    filtered = []
+    for tx in history:
+        date_str = tx.get("date", "")
+        try:
+            tx_date = datetime.fromisoformat(date_str).date()
+            if start <= tx_date <= end:
+                filtered.append(tx)
+        except (ValueError, TypeError):
+            pass
+
+    return filtered
 
 # Maximum single transfer amount (demo guard against absurd values).
 _MAX_TRANSFER_AMOUNT = 10_000_000.0
@@ -232,6 +265,8 @@ class ActionExecutor:
                 user_id,
                 filter_type=str(parameters.get("filter", "all")),
                 period=str(parameters.get("period", "")),
+                date_from=str(parameters.get("date_from", "")),
+                date_to=str(parameters.get("date_to", "")),
                 session_txs=session_txs,
             )
         if action == "create_report":
@@ -239,6 +274,8 @@ class ActionExecutor:
                 user_id,
                 report_type=str(parameters.get("report_type", "summary")),
                 period=str(parameters.get("period", "")),
+                date_from=str(parameters.get("date_from", "")),
+                date_to=str(parameters.get("date_to", "")),
                 report_subtype=str(parameters.get("report_subtype", "summary")),
             )
         if action == "initiate_transfer":
@@ -269,6 +306,8 @@ class ActionExecutor:
         user_id: str,
         filter_type: str = "all",
         period: str = "",
+        date_from: str = "",
+        date_to: str = "",
         session_txs: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         try:
@@ -285,7 +324,10 @@ class ActionExecutor:
                         merged.append(tx)
                 history = merged + history
 
-            if period:
+            # Explicit date range takes priority over a named period.
+            if date_from and date_to:
+                history = _filter_history_by_range(history, date_from, date_to)
+            elif period:
                 history = _filter_history_by_period(history, period)
 
             if filter_type in ("incoming", "income"):
@@ -324,13 +366,27 @@ class ActionExecutor:
     # filters transaction_history by date when period is parseable.
     # ------------------------------------------------------------------
 
-    def _create_report(self, user_id: str, report_type: str, period: str = "", report_subtype: str = "summary") -> dict[str, Any]:
+    def _create_report(
+        self,
+        user_id: str,
+        report_type: str,
+        period: str = "",
+        date_from: str = "",
+        date_to: str = "",
+        report_subtype: str = "summary",
+    ) -> dict[str, Any]:
         try:
             user = _require_user(user_id)
             history: list[dict] = user.get("transaction_history", [])
 
-            resolved_period = period.strip() if period.strip() else _current_period()
-            filtered = _filter_history_by_period(history, resolved_period)
+            # Explicit date range takes priority over a named period.
+            if date_from and date_to:
+                filtered = _filter_history_by_range(history, date_from, date_to)
+                period_display_override: str | None = f"{date_from} — {date_to}"
+            else:
+                resolved_period = period.strip() if period.strip() else _current_period()
+                filtered = _filter_history_by_period(history, resolved_period)
+                period_display_override = None
 
             income_txs = [tx for tx in filtered if tx.get("type") == "income"]
             expense_txs = [tx for tx in filtered if tx.get("type") == "expense"]
@@ -352,7 +408,7 @@ class ActionExecutor:
                 reverse=True,
             )[:3]
 
-            period_display = resolved_period.capitalize()
+            period_display = period_display_override or resolved_period.capitalize()
 
             return {
                 "period": period_display,

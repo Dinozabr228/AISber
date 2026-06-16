@@ -39,6 +39,11 @@ MOCK_USERS: Dict[str, Any] = {
             {"date": "2026-05-27", "amount": 4800.00,  "type": "expense", "category": "Аренда оборудования",     "recipient": "ООО «ТехПрокат»"},
             {"date": "2026-05-28", "amount": 2700.00,  "type": "expense", "category": "Маркетинг",               "recipient": "ООО «МедиаСервис»"},
             {"date": "2026-05-30", "amount": 11200.00, "type": "income",                                          "sender":    "ЗАО «МеталлоПрокат»"},
+            {"date": "2026-06-02", "amount": 9400.00,  "type": "expense", "category": "Строительные материалы",  "recipient": "ООО «СтройМатериалы Плюс»"},
+            {"date": "2026-06-05", "amount": 27000.00, "type": "income",                                          "sender":    "ЗАО «МеталлоПрокат»"},
+            {"date": "2026-06-08", "amount": 2100.00,  "type": "expense", "category": "Канцтовары",              "recipient": "ООО «ОфисМаркет»"},
+            {"date": "2026-06-11", "amount": 15600.00, "type": "income",                                          "sender":    "ООО «ЛогистикПро»"},
+            {"date": "2026-06-14", "amount": 4300.00,  "type": "expense", "category": "Транспорт",               "recipient": "ООО «АвтоТранс»"},
         ],
     },
 
@@ -78,6 +83,10 @@ MOCK_USERS: Dict[str, Any] = {
             {"date": "2026-05-26", "amount": 680.00,  "type": "expense", "category": "Обучение",                "recipient": "ООО «КнигаБизнес»"},
             {"date": "2026-05-27", "amount": 2800.00, "type": "income",                                          "sender":    "ИП Кравцова М.П."},
             {"date": "2026-05-29", "amount": 1100.00, "type": "expense", "category": "Налоги",                  "recipient": "МНС Республики Беларусь"},
+            {"date": "2026-06-03", "amount": 4200.00, "type": "income",                                          "sender":    "ООО «Медиагруп»"},
+            {"date": "2026-06-06", "amount": 620.00,  "type": "expense", "category": "Связь",                   "recipient": "РУП «Белтелеком»"},
+            {"date": "2026-06-10", "amount": 5300.00, "type": "income",                                          "sender":    "ООО «Дизайн Студия Арт»"},
+            {"date": "2026-06-13", "amount": 980.00,  "type": "expense", "category": "Аренда офиса",            "recipient": "ООО «КоворкингБай»"},
         ],
     },
 
@@ -120,6 +129,10 @@ MOCK_USERS: Dict[str, Any] = {
             {"date": "2026-05-23", "amount": 48000.00,  "type": "income",                                           "sender":    "ООО «МолочГрупп»"},
             {"date": "2026-05-26", "amount": 16800.00,  "type": "expense", "category": "Зарплата",                 "recipient": "Зарплатный проект"},
             {"date": "2026-05-27", "amount": 7500.00,   "type": "expense", "category": "Страхование",              "recipient": "ОАО «Белгосстрах»"},
+            {"date": "2026-06-01", "amount": 52000.00,  "type": "income",                                           "sender":    "ООО «ЗерноТрейд»"},
+            {"date": "2026-06-04", "amount": 17500.00,  "type": "expense", "category": "Агрохимия",                "recipient": "ООО «АгроХимия Плюс»"},
+            {"date": "2026-06-09", "amount": 6700.00,   "type": "expense", "category": "Топливо",                  "recipient": "РУП «Белнефтехим»"},
+            {"date": "2026-06-12", "amount": 39000.00,  "type": "income",                                           "sender":    "ООО «МолочГрупп»"},
         ],
     },
 }

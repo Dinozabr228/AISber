@@ -77,6 +77,10 @@ class ConversationContext:
             parts.append(f"filter={self.last_filters['filter']}")
         if self.last_filters.get("period"):
             parts.append(f"period={self.last_filters['period']}")
+        if self.last_filters.get("date_from"):
+            parts.append(f"date_from={self.last_filters['date_from']}")
+        if self.last_filters.get("date_to"):
+            parts.append(f"date_to={self.last_filters['date_to']}")
         if self.last_filters.get("report_subtype"):
             parts.append(f"subtype={self.last_filters['report_subtype']}")
         if self.last_filters.get("section"):

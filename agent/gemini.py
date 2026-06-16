@@ -2,6 +2,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -132,20 +133,30 @@ SYSTEM_PROMPT = (
     # ── КОНТЕКСТНЫЕ УТОЧНЕНИЯ ────────────────────────────────────────────────
     "КОНТЕКСТНЫЕ УТОЧНЕНИЯ:\n"
     "Когда prompt начинается с [Контекст предыдущего запроса: ...] — используй контекст.\n"
-    "Для get_transactions:\n"
-    "  • 'только входящие' / 'поступления' → parameters.filter: 'incoming'\n"
-    "  • 'только расходы' / 'исходящие' → parameters.filter: 'outgoing'\n"
+    "Для get_transactions и create_report (правила периода ОДИНАКОВЫ для обоих действий\n"
+    "и применяются ВСЕГДА, когда в сообщении упомянута дата/период — независимо от того,\n"
+    "распознано ли сообщение как 'быстрое действие' ниже):\n"
+    "  • 'только входящие' / 'поступления' → parameters.filter: 'incoming' (только get_transactions)\n"
+    "  • 'только расходы' / 'исходящие' → parameters.filter: 'outgoing' (только get_transactions)\n"
     "  • 'за прошлый месяц' → parameters.period: 'last_month'\n"
     "  • 'за этот месяц' → parameters.period: 'current_month'\n"
     "  • 'за [месяц] [год]' → parameters.period: '[месяц] [год]'\n"
-    "ВАЖНО: если контекст уже содержит filter или period и пользователь их не меняет — СОХРАНЯЙ их.\n"
+    "  • Произвольный диапазон ('с 1 по 15 июня', 'с 1 сентября по 15 сентября',\n"
+    "    'за период с 01.06.2026 по 15.06.2026', 'between 1 and 15 June') → НЕ заполняй period,\n"
+    "    а задай: parameters.date_from: 'YYYY-MM-DD', parameters.date_to: 'YYYY-MM-DD'\n"
+    "    (год бери из сообщения; если год не указан — текущий год).\n"
+    "ВАЖНО: если контекст уже содержит filter, period или date_from/date_to и пользователь их\n"
+    "не меняет — СОХРАНЯЙ их.\n"
     "\n"
     # ── БЫСТРЫЕ ДЕЙСТВИЯ ─────────────────────────────────────────────────────
     "БЫСТРЫЕ ДЕЙСТВИЯ:\n"
+    "Эти правила задают report_subtype/intent, НО если в том же сообщении есть период или\n"
+    "диапазон дат — ОБЯЗАТЕЛЬНО добавь period или date_from/date_to из раздела\n"
+    "'КОНТЕКСТНЫЕ УТОЧНЕНИЯ' выше в те же parameters. Не отбрасывай дату из сообщения.\n"
     "• 'Создать отчёт' / 'Финансовый отчёт' → action: create_report,\n"
-    "  parameters: {\"report_subtype\": \"summary\"}\n"
+    "  parameters: {\"report_subtype\": \"summary\", ...период/диапазон если указан}\n"
     "• 'Проанализируй отчёт' / 'Анализ отчёта' → action: create_report,\n"
-    "  parameters: {\"report_subtype\": \"analysis\"}\n"
+    "  parameters: {\"report_subtype\": \"analysis\", ...период/диапазон если указан}\n"
     "  user_message: основные статьи расходов, сравнение, краткий вывод — содержательно.\n"
     "• 'Основные расходы' / 'Крупнейшие расходы' → action: get_transactions\n"
     "  user_message: TOP-5 категорий расходов по убыванию суммы.\n"
@@ -155,6 +166,8 @@ SYSTEM_PROMPT = (
     "• initiate_transfer: amount (число), recipient (имя юрлица вкл. СООО, ООО, ИП, ЗАО и т.д.),\n"
     "  purpose (назначение платежа если указано — строка или null).\n"
     "  Если recipient — не юрлицо, action=null.\n"
+    "• get_transactions / create_report: period (строка) ИЛИ date_from+date_to (YYYY-MM-DD каждая,\n"
+    "  только для явно заданного пользователем диапазона дат).\n"
     "• get_counterparties: parameters всегда {}.\n"
     "• navigate: section — id раздела или ключевое слово\n"
     "  ('payments', 'statement', 'salary', 'productsAndServices', 'partner-services', 'other').\n"
@@ -646,6 +659,88 @@ _LEGAL_ENTITY_BARE_RE = re.compile(
 )
 
 
+# Month-name parsing for fallback period/range extraction (degraded-mode NLU,
+# mirrors executor.actions._MONTH_RU_TO_NUM — kept local to avoid an agent→executor
+# import across the Zero-Trust boundary).
+_MONTH_RU_TO_NUM: dict[str, int] = {
+    "январь": 1, "января": 1, "янв": 1,
+    "февраль": 2, "февраля": 2, "фев": 2,
+    "март": 3, "марта": 3, "мар": 3,
+    "апрель": 4, "апреля": 4, "апр": 4,
+    "май": 5, "мая": 5,
+    "июнь": 6, "июня": 6, "июн": 6,
+    "июль": 7, "июля": 7, "июл": 7,
+    "август": 8, "августа": 8, "авг": 8,
+    "сентябрь": 9, "сентября": 9, "сен": 9,
+    "октябрь": 10, "октября": 10, "окт": 10,
+    "ноябрь": 11, "ноября": 11, "ноя": 11,
+    "декабрь": 12, "декабря": 12, "дек": 12,
+}
+_MONTHS_ALT = "|".join(sorted((re.escape(k) for k in _MONTH_RU_TO_NUM), key=len, reverse=True))
+
+_ISO_RANGE_RE = re.compile(
+    r"с\s+(\d{4})-(\d{2})-(\d{2})\s+по\s+(\d{4})-(\d{2})-(\d{2})", re.IGNORECASE
+)
+_NUMERIC_RANGE_RE = re.compile(
+    r"с\s+(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})\s+по\s+(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})",
+    re.IGNORECASE,
+)
+_RU_RANGE_RE = re.compile(
+    rf"с\s+(\d{{1,2}})(?:\s+({_MONTHS_ALT}))?\s+по\s+(\d{{1,2}})\s+({_MONTHS_ALT})(?:\s+(\d{{4}}))?",
+    re.IGNORECASE | re.UNICODE,
+)
+_NAMED_MONTH_RE = re.compile(rf"({_MONTHS_ALT})(?:\s+(\d{{4}}))?", re.IGNORECASE | re.UNICODE)
+
+
+def _parse_period_params(message: str) -> dict:
+    """Extract period/date_from/date_to from free text for degraded (fallback) mode.
+
+    Mirrors the date-handling rules given to Gemini in SYSTEM_PROMPT, so report
+    and transaction queries behave the same whether or not the LLM is reachable.
+    Returns {} when nothing is recognised — caller falls back to no filtering.
+    """
+    msg = message.lower()
+
+    m = _ISO_RANGE_RE.search(msg)
+    if m:
+        y1, mo1, d1, y2, mo2, d2 = m.groups()
+        return {"date_from": f"{y1}-{mo1}-{d1}", "date_to": f"{y2}-{mo2}-{d2}"}
+
+    m = _NUMERIC_RANGE_RE.search(msg)
+    if m:
+        d1, mo1, y1, d2, mo2, y2 = m.groups()
+        return {
+            "date_from": f"{y1}-{int(mo1):02d}-{int(d1):02d}",
+            "date_to": f"{y2}-{int(mo2):02d}-{int(d2):02d}",
+        }
+
+    m = _RU_RANGE_RE.search(msg)
+    if m:
+        d1, mon1, d2, mon2, year = m.groups()
+        month_num = _MONTH_RU_TO_NUM.get(mon1 or "") or _MONTH_RU_TO_NUM.get(mon2 or "")
+        if month_num:
+            yr = int(year) if year else datetime.now(timezone.utc).year
+            try:
+                return {
+                    "date_from": f"{yr:04d}-{month_num:02d}-{int(d1):02d}",
+                    "date_to": f"{yr:04d}-{month_num:02d}-{int(d2):02d}",
+                }
+            except ValueError:
+                pass
+
+    if "прошлый месяц" in msg or "предыдущий месяц" in msg:
+        return {"period": "last_month"}
+    if "этот месяц" in msg or "текущий месяц" in msg:
+        return {"period": "current_month"}
+
+    m = _NAMED_MONTH_RE.search(msg)
+    if m:
+        month_name, year = m.groups()
+        return {"period": f"{month_name} {year}" if year else month_name}
+
+    return {}
+
+
 def _parse_transfer_params(message: str) -> dict:
     amount: float | None = None
     recipient: str | None = None
@@ -848,6 +943,20 @@ def _fallback_response(message: str) -> GeminiResponse:
                     ),
                 )
             base = dict(_FALLBACK_INTENTS[intent_key])
+            if intent_key in ("transaction", "report"):
+                period_params = _parse_period_params(message)
+                if period_params:
+                    base["parameters"] = {**base["parameters"], **period_params}
+                    base["user_message"] = (
+                        "Формирую отчёт по вашему запросу за указанный период."
+                        if intent_key == "report"
+                        else "Вот операции по вашему счёту за указанный период."
+                    )
+            if intent_key == "transaction":
+                if any(kw in msg_lower for kw in ("входящ", "поступлен")):
+                    base["parameters"] = {**base["parameters"], "filter": "incoming"}
+                elif any(kw in msg_lower for kw in ("исходящ",)):
+                    base["parameters"] = {**base["parameters"], "filter": "outgoing"}
             return GeminiResponse(**base)
 
     faq_answer = _match_faq(message)

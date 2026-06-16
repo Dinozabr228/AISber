@@ -335,6 +335,10 @@ def _safe_context_params(action: str, parameters: dict) -> dict[str, str]:
             safe["filter"] = str(parameters["filter"])[:50]
         if parameters.get("period"):
             safe["period"] = str(parameters["period"])[:50]
+        if parameters.get("date_from"):
+            safe["date_from"] = str(parameters["date_from"])[:10]
+        if parameters.get("date_to"):
+            safe["date_to"] = str(parameters["date_to"])[:10]
     elif action == "navigate":
         if parameters.get("section"):
             safe["section"] = str(parameters["section"])[:50]
@@ -343,6 +347,10 @@ def _safe_context_params(action: str, parameters: dict) -> dict[str, str]:
             safe["report_type"] = str(parameters["report_type"])[:50]
         if parameters.get("period"):
             safe["period"] = str(parameters["period"])[:50]
+        if parameters.get("date_from"):
+            safe["date_from"] = str(parameters["date_from"])[:10]
+        if parameters.get("date_to"):
+            safe["date_to"] = str(parameters["date_to"])[:10]
     # initiate_transfer: amount and recipient are sensitive — not stored
     # get_tariffs, get_requisites, get_counterparties, get_favorites: no params
     return safe
@@ -417,6 +425,10 @@ def _update_context(
             new_filters["filter"] = parameters["filter"]
         if parameters.get("period"):
             new_filters["period"] = parameters["period"]
+        if parameters.get("date_from"):
+            new_filters["date_from"] = parameters["date_from"]
+        if parameters.get("date_to"):
+            new_filters["date_to"] = parameters["date_to"]
         if new_filters:
             merged = dict(entry.get("last_filters") or {})
             merged.update(new_filters)
@@ -427,6 +439,10 @@ def _update_context(
             new_filters["report_subtype"] = parameters["report_subtype"]
         if parameters.get("period"):
             new_filters["period"] = parameters["period"]
+        if parameters.get("date_from"):
+            new_filters["date_from"] = parameters["date_from"]
+        if parameters.get("date_to"):
+            new_filters["date_to"] = parameters["date_to"]
         if new_filters:
             entry["last_filters"] = new_filters
     elif action not in ("get_transactions", "create_report"):
@@ -459,8 +475,8 @@ def _update_context(
 
 # Filter fields that carry over across follow-up turns per action type
 _FOLLOW_UP_FIELDS: dict[str, list[str]] = {
-    "get_transactions": ["filter", "period"],
-    "create_report":    ["report_type", "period", "report_subtype"],
+    "get_transactions": ["filter", "period", "date_from", "date_to"],
+    "create_report":    ["report_type", "period", "report_subtype", "date_from", "date_to"],
 }
 
 # Parameter values that mean "not specified" — don't override stored context
@@ -512,7 +528,7 @@ def _build_context_hint(ctx: dict[str, Any]) -> str:
     for turn in recent:
         if "action" in turn:
             action = turn["action"]
-            extras = [f"{k}={turn[k]}" for k in ("filter", "period", "section", "report_type", "report_subtype") if k in turn]
+            extras = [f"{k}={turn[k]}" for k in ("filter", "period", "date_from", "date_to", "section", "report_type", "report_subtype") if k in turn]
             turn_strs.append(f"{action}({', '.join(extras)})" if extras else action)
         elif "topic" in turn:
             turn_strs.append(f"[{turn['topic']}]")
